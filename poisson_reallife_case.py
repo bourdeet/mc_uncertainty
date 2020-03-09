@@ -41,7 +41,7 @@ if __name__=='__main__':
 
 
 
-
+    '''
     print('Side step: checkout the data fluctuation methods...')
     #
     # Side Step: Generate 500 pseudo-data sets and look at their bin-by-bin event counts
@@ -51,9 +51,11 @@ if __name__=='__main__':
 
         new_pseudo_data_set = simulation_summed[0].fluctuate(method='poisson')
         data_fluctuation_checks.append(new_pseudo_data_set)
+    '''
 
     # Plot the side step
     from utils.plotting.analysis_plots import *
+
     '''
     F = AnalysisFigure(output_pdf=args.output)
     F.plot_maps(maps=data_fluctuation_checks)
@@ -125,11 +127,10 @@ if __name__=='__main__':
     from pisa.utils.stats import generalized_poisson_llh
 
     # observed counts are MapSet objects
-    print(type(simulation_summed))
-    observed_counts = simulation_summed.fluctuate(method='poisson',random_state=0)
-    
-
-    output = generalized_poisson_llh(actual_values=new_pseudo_data_set,expected_values=simulation_raw)
+    print('testing the likelihood on fluctuated data...')
+    observed_counts = simulation_summed[0].fluctuate(method='poisson')
+    print('Feeding fluctuated data intot the llh function...')
+    output = generalized_poisson_llh(actual_values=observed_counts,expected_values=simulation_raw)
     print(output)
 
     #flattened_expected = .hist.flatten(order='C')

@@ -201,63 +201,127 @@ def generalized_pg_mixture_2nd(k, alphas, betas):
 
 
 ## calculate c-based version .. if it doesnt suffice in precision, go to direct convolution
-def fast_pgmix(k, alphas, betas):
+def fast_pgmix(k, alphas=None, betas=None):
+    '''
+    Core function that computes the generalized likelihood 2
+
+    '''
+    assert isinstance(k,float),'ERROR: k must be a float'
+    assert isinstance(alphas,np.ndarray),'ERROR: alphas must be numpy arrays'
+    assert isinstance(betas,np.ndarray),'ERROR: betas must be numpy arrays'
+
     ret=poisson_gamma_mixtures.c_generalized_pg_mixture(k, alphas, betas)
-    
+    #print('k: {0},nweights: {1}, return value : {2}\t alphas {3} \t betas: {4}'.format(k,len(betas),ret,alphas,betas))
+
+    if np.isnan(ret):
+        return 1.
+
+    if not np.isfinite(ret):
+        for a,b in zip(alphas,betas):
+            print(a,b,poisson_gamma_mixtures.c_generalized_pg_mixture(k,np.array([a]),np.array([b])))
+
+
     if(ret>1e-300):
         return np.log(ret)
     else:
         return generalized_pg_mixture_2nd(k, alphas, betas)
 
+def normal_log_probability(k,weight_sum=None):
+    '''
+    return a simple normal probability of
+    mu = weight_sum and sigma = sqrt(weight_sum)
+
+    '''
+    import scipy as scp 
+    from scipy.stats import norm
+
+    P = norm.pdf(k, loc=weight_sum, scale=np.sqrt(weight_sum))
+
+    logP = np.log(max([1.e-10,P]))
+
+    return logP
+
 def poisson_gen2(data, individual_weights_dict, mean_adjustments, larger_weight_variance=False):
+    '''
+    Main function that gets called when we select the
+    second generalization option.
+    '''
 
     tot_llh=0.0
 
+
     for cur_bin_index, _ in enumerate(list(individual_weights_dict.values())[0]):
+        #print('looking at bin #{0}: datacount = {1}'.format(cur_bin_index,data[cur_bin_index]))
 
-        alphas=[]
-        betas=[]
+        # 
+        # If the data count is a above a certain number, return a normal 
+        # probability
 
-        for src in individual_weights_dict.keys():
+        if data[cur_bin_index] >100:
+            weight_sum = 0.0
+            for src in individual_weights_dict.keys():
+                this_weights=individual_weights_dict[src][cur_bin_index]
+                weight_sum+=sum(this_weights)
 
-            this_weights=individual_weights_dict[src][cur_bin_index]
 
-            if(len(this_weights)>0):
-                kmc=float(len(this_weights))
-                mu=float(len(this_weights))
-                
-                exp_w=0.0
-                
-                
-                exp_w=np.mean(this_weights)
-                var_w=0.0
+            logP = normal_log_probability(k=data[cur_bin_index],weight_sum=weight_sum)
+            tot_llh+=logP
 
-                if(larger_weight_variance):
-                    var_w=(this_weights**2).sum()/float(len(this_weights))
-                else:
-                    var_w=((this_weights-exp_w)**2).sum()/(float(len(this_weights)))
+        else:
 
-                var_z=(var_w+exp_w**2)
 
-                beta=exp_w/var_z
-                trad_alpha=(exp_w**2)/var_z
+            alphas=[]
+            betas=[]
 
-                #sumw=this_weights.sum()
-                #sqrw=(this_weights**2).sum()
-                
+            #
+            # Computing the approximate values of betas and alphas
+            # based on the moments of the weigt distribution
+            for src in individual_weights_dict.keys():
 
-                extra_fac=mean_adjustments[src]
+                this_weights=individual_weights_dict[src][cur_bin_index]
 
-                alphas.append( (mu+extra_fac)*trad_alpha)
-                betas.append(beta)
+                if(len(this_weights)>0):
+                    kmc=float(len(this_weights))
+                    mu=float(len(this_weights))
+                    
+                    exp_w=0.0
+                    
+                    
+                    exp_w=np.mean(this_weights)
+                    var_w=0.0
 
-               
+                    if(larger_weight_variance):
+                        var_w=(this_weights**2).sum()/float(len(this_weights))
+                    else:
+                        var_w=((this_weights-exp_w)**2).sum()/(float(len(this_weights)))
 
-        if(len(alphas)>0):
+                    var_z=(var_w+exp_w**2)
 
-            tot_llh+=fast_pgmix(data[cur_bin_index], np.array(alphas), np.array(betas))
+                    beta=exp_w/var_z
+                    trad_alpha=(exp_w**2)/var_z
 
-   
+                    #sumw=this_weights.sum()
+                    #sqrw=(this_weights**2).sum()
+                    
+
+                    extra_fac=mean_adjustments[src]
+
+                    alphas.append( (mu+extra_fac)*trad_alpha)
+                    betas.append(beta)
+
+
+            if(len(alphas)>0):
+                A = data[cur_bin_index]
+                #print('running the "fast" gamma mix...')
+
+                new_llh=fast_pgmix(A, np.array(alphas), np.array(betas))
+                #print('llh: ',new_llh)
+                tot_llh+=new_llh
+
+                if not np.isfinite(tot_llh):
+                    raise Exception('WOW! llh is now infinite!')
+
+    #print('llh so far: ',tot_llh)
     return tot_llh
 
 ########################################
