@@ -248,10 +248,11 @@ def poisson_gen2(data, individual_weights_dict, mean_adjustments, larger_weight_
     '''
 
     tot_llh=0.0
-
+    all_alphas = []
+    all_betas  = []
+    llh_per_bin = []
 
     for cur_bin_index, _ in enumerate(list(individual_weights_dict.values())[0]):
-        #print('looking at bin #{0}: datacount = {1}'.format(cur_bin_index,data[cur_bin_index]))
 
         # 
         # If the data count is a above a certain number, return a normal 
@@ -259,19 +260,31 @@ def poisson_gen2(data, individual_weights_dict, mean_adjustments, larger_weight_
 
         if data[cur_bin_index] >100:
             weight_sum = 0.0
+            a = {}
+            b = {}
             for src in individual_weights_dict.keys():
                 this_weights=individual_weights_dict[src][cur_bin_index]
                 weight_sum+=sum(this_weights)
+                a[src] = np.NaN
+                b[src] = np.NaN
 
+            all_alphas.append(a)
+            all_betas.append(b)
+
+            if weight_sum<0:
+                print('\nERROR: negative weight sum should not happen...')
+                raise Exception
 
             logP = normal_log_probability(k=data[cur_bin_index],weight_sum=weight_sum)
+            print('thorsten llh, bin :',cur_bin_index, weight_sum,data[cur_bin_index])
+            llh_per_bin.append(logP)
             tot_llh+=logP
 
         else:
 
 
-            alphas=[]
-            betas=[]
+            alphas={}
+            betas={}
 
             #
             # Computing the approximate values of betas and alphas
@@ -306,23 +319,40 @@ def poisson_gen2(data, individual_weights_dict, mean_adjustments, larger_weight_
 
                     extra_fac=mean_adjustments[src]
 
-                    alphas.append( (mu+extra_fac)*trad_alpha)
-                    betas.append(beta)
+                    alphas[src] = (mu+extra_fac)*trad_alpha
+                    betas[src]  = beta
 
+                else:
+                    print(src,this_weights)
+                    raise Exception
+                    alphas[src] = np.NaN
+                    betas[src]  = np.NaN
 
-            if(len(alphas)>0):
+            all_alphas.append(alphas)
+            all_betas.append(betas)
+
+            # Compute the likelihood only if there are non-NaNs values in at least one of the sets
+            array_of_alphas  = np.array(list(alphas.values()))
+
+            if sum(np.isfinite(array_of_alphas))>0:
                 A = data[cur_bin_index]
                 #print('running the "fast" gamma mix...')
 
-                new_llh=fast_pgmix(A, np.array(alphas), np.array(betas))
-                #print('llh: ',new_llh)
+                AAA = np.array(list(alphas.values()))
+
+                BBB = np.array(list(betas.values()))
+
+                new_llh=fast_pgmix(A, AAA[np.isfinite(AAA)], BBB[np.isfinite(BBB)])
+                llh_per_bin.append(new_llh)
                 tot_llh+=new_llh
 
                 if not np.isfinite(tot_llh):
                     raise Exception('WOW! llh is now infinite!')
+            else:
+                print('EMPTY BIIIIIN', cur_bin_index)
+                raise Exception
 
-    #print('llh so far: ',tot_llh)
-    return tot_llh
+    return tot_llh, llh_per_bin
 
 ########################################
 # end generalization (2)
@@ -504,6 +534,7 @@ def generic_pdf(data, dataset_weights, type="gen2", empty_bin_strategy=1, empty_
         kmc_dict[dsname]=np.array([len(w) for w in dataset_weights[dsname]])
         max_weights[dsname]=mw
 
+
     ## calculate mean adjustment per dataset
     mean_adjustments=dict()
     for dsname in kmc_dict.keys():
@@ -559,7 +590,7 @@ def generic_pdf(data, dataset_weights, type="gen2", empty_bin_strategy=1, empty_
         llh_res=poisson_gen3(data, new_weights, mean_adjustments, log_stirling,s_factor=s_factor, larger_weight_variance=larger_weight_variance)
         
     elif(type=="gen2"):
-        llh_res=poisson_gen2(data, new_weights, mean_adjustments, larger_weight_variance=larger_weight_variance)
+        llh_res, llh_per_bin =poisson_gen2(data, new_weights, mean_adjustments, larger_weight_variance=larger_weight_variance)
     elif(type=="gen2_effective"):
         llh_res=poisson_gen2_effective(data, new_weights, mean_adjustments)
     else:
@@ -591,7 +622,7 @@ def generic_pdf(data, dataset_weights, type="gen2", empty_bin_strategy=1, empty_
                 
 
 
-    return llh_res
+    return llh_res, llh_per_bin, mean_adjustments, data, new_weights
 
 #################################
 ### arXiv:1901.04645, Arg+elles et al.
