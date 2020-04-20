@@ -17,6 +17,9 @@ from utils.particle_tools import PARTICLE_PLOTTING_PROPERTIES
 from collections import OrderedDict
 import numpy as np
 
+from pisa.utils.log import set_verbosity, Levels
+from pisa.utils.profiler import profile
+
 #from pisa.utils.stats import generalized_poisson_llh
 #from llh_defs.poisson import normal_log_probability, fast_pgmix
 
@@ -28,8 +31,12 @@ if __name__=='__main__':
 
     parser.add_argument('-p','--pipelines',help='list of PISA pipelines',nargs='+',required = True)
     parser.add_argument('-o','--output',help='stem of the output filename',default='poisson_reallife_test.pdf')
+    parser.add_argument('--debug',help='prints out pisa debug logs',action='store_true')
 
     args= parser.parse_args()
+
+    if args.debug:
+        set_verbosity(Levels.DEBUG)
 
 
     #
@@ -46,8 +53,10 @@ if __name__=='__main__':
     print('\n*********************************\n')
     print('Summing pipeline outputs and generate pseudo_data')
     simulation_summed = simulation_raw.get_outputs(return_sum=True) # MapSet object
-    #simulation_events = simulation_raw.get_outputs(return_sum=False, output_mode='events')
-    #simulation_mapsets= simulation_raw.get_outputs(return_sum=False)
+    simulation_events = simulation_raw.get_outputs(return_sum=False, output_mode='events')
+    simulation_mapsets= simulation_raw.get_outputs(return_sum=False)
+
+
 
     simulation_summed = simulation_summed['weights']
     observed_counts = simulation_summed.fluctuate(method='poisson',random_state=0)
@@ -302,12 +311,12 @@ if __name__=='__main__':
 
     ana = Analysis()
 
-    # result_gen_llh = ana.fit_hypo(observed_counts,
-    #                       simulation_raw,
-    #                       metric='generalized_poisson_llh',
-    #                       minimizer_settings = minimizer_settings,
-    #                       hypo_param_selections = 'nh',
-    #                       )
+    result_gen_llh = ana.fit_hypo(MapSet(observed_counts),
+                          simulation_raw,
+                          metric='generalized_poisson_llh',
+                          minimizer_settings = minimizer_settings,
+                          hypo_param_selections = 'nh',
+                          )
 
     # For comparison, perform the same fit with the other standard metrics
     result_mod_chi2 = ana.fit_hypo(MapSet(observed_counts),
